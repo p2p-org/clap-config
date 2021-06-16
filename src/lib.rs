@@ -6,6 +6,7 @@ use std::collections::HashMap;
 pub struct Clap {
     args: HashMap<String, CliType>,
     pub matches: ArgMatches<'static>,
+    subcommand_field: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +50,13 @@ impl Clap {
         Clap {
             args: get_args_types(&app),
             matches: app.get_matches(),
+            subcommand_field: None,
         }
+    }
+
+    pub fn subcommand_field(mut self, field: &str) -> Self {
+        self.subcommand_field = Some(field.to_owned());
+        self
     }
 }
 
@@ -93,6 +100,14 @@ impl Source for Clap {
                 .collect()
         }
 
-        Ok(extract_matches(&self.matches, &self.args))
+        let mut matches = extract_matches(&self.matches, &self.args);
+
+        if let (Some(subcommand_field), Some(subcommand)) =
+            (&self.subcommand_field, self.matches.subcommand_name())
+        {
+            matches.insert(subcommand_field.clone(), Value::new(None, subcommand));
+        }
+
+        Ok(matches)
     }
 }
