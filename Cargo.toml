@@ -1,8 +1,14 @@
 [package]
 name = "clap-config"
+description = "A glue between clap and config crates: load your CLI options into your merged config with ease!"
 version = "0.1.0"
 authors = ["Konstantin Stepanov <konstantin.s@p2p.org>"]
+categories = ["config", "command-line-interface"]
+keywords = ["config", "cli"]
 edition = "2018"
+repository = "https://github.com/p2p-org/clap-config.git"
+readme = "README.md"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
