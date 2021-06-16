@@ -3,6 +3,8 @@
 This is a glue between the [`clap`][1] and [`config`][2] crates.
 Load your command line arguments into your common config at ease!
 
+This crate was created for [P2P Validator](https://p2p.org).
+
 # Usage
 
 Add this to your `Cargo.toml`:
