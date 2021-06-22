@@ -15,3 +15,9 @@ license = "MIT"
 [dependencies]
 clap = "2"
 config = "0.11"
+
+[dev-dependencies]
+serde = "1"
+serde_derive = "1"
+log = "0.4"
+env_logger = "0.8.4"

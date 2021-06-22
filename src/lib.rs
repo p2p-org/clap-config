@@ -1,6 +1,7 @@
 use clap::{App, ArgMatches, ArgSettings};
 use config::{ConfigError, Source, Value};
 use std::collections::HashMap;
+use std::ffi::OsString;
 
 #[derive(Debug, Clone)]
 pub struct Clap {
@@ -18,45 +19,82 @@ enum CliType {
     Subcommand(HashMap<String, CliType>),
 }
 
+impl From<App<'static, 'static>> for Clap {
+    fn from(app: App<'static, 'static>) -> Clap {
+        Clap::new(app)
+    }
+}
+
 impl Clap {
     pub fn new(app: App<'static, 'static>) -> Self {
-        fn get_args_types(app: &App) -> HashMap<String, CliType> {
-            app.p
-                .subcommands
-                .iter()
-                .map(|app| {
-                    (
-                        app.p.meta.name.clone(),
-                        CliType::Subcommand(get_args_types(&app)),
-                    )
-                })
-                .chain(app.p.opts.iter().map(|opt| {
-                    (
-                        opt.b.name.to_owned(),
-                        match (
-                            opt.b.settings.is_set(ArgSettings::TakesValue),
-                            opt.b.settings.is_set(ArgSettings::Multiple),
-                        ) {
-                            (true, true) => CliType::Multiple,
-                            (true, false) => CliType::Single,
-                            (false, true) => CliType::Count,
-                            (false, false) => CliType::Boolean,
-                        },
-                    )
-                }))
-                .collect()
-        }
+        Self::from_matches(Self::get_args_types(&app), app.get_matches())
+    }
 
-        Clap {
-            args: get_args_types(&app),
-            matches: app.get_matches(),
-            subcommand_field: None,
-        }
+    pub fn from_args<I>(app: App<'static, 'static>, args: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<OsString> + Clone,
+    {
+        Self::from_matches(Self::get_args_types(&app), app.get_matches_from(args))
     }
 
     pub fn subcommand_field(mut self, field: &str) -> Self {
         self.subcommand_field = Some(field.to_owned());
         self
+    }
+
+    fn get_args_types(app: &App) -> HashMap<String, CliType> {
+        fn convert(name: &str, takes_value: bool, multiple: bool) -> (String, CliType) {
+            (
+                name.to_owned(),
+                match (takes_value, multiple) {
+                    (true, true) => CliType::Multiple,
+                    (true, false) => CliType::Single,
+                    (false, true) => CliType::Count,
+                    (false, false) => CliType::Boolean,
+                },
+            )
+        }
+
+        app.p
+            .subcommands
+            .iter()
+            .map(|app| {
+                (
+                    app.p.meta.name.clone(),
+                    CliType::Subcommand(Self::get_args_types(&app)),
+                )
+            })
+            .chain(app.p.opts.iter().map(|opt| {
+                convert(
+                    opt.b.name,
+                    opt.b.settings.is_set(ArgSettings::TakesValue),
+                    opt.b.settings.is_set(ArgSettings::Multiple),
+                )
+            }))
+            .chain(app.p.flags.iter().map(|flag| {
+                convert(
+                    flag.b.name,
+                    flag.b.settings.is_set(ArgSettings::TakesValue),
+                    flag.b.settings.is_set(ArgSettings::Multiple),
+                )
+            }))
+            .chain(app.p.positionals.iter().map(|(_, pos)| {
+                convert(
+                    pos.b.name,
+                    pos.b.settings.is_set(ArgSettings::TakesValue),
+                    pos.b.settings.is_set(ArgSettings::Multiple),
+                )
+            }))
+            .collect()
+    }
+
+    fn from_matches(args: HashMap<String, CliType>, matches: ArgMatches<'static>) -> Self {
+        Self {
+            args,
+            matches,
+            subcommand_field: None,
+        }
     }
 }
 
@@ -109,5 +147,100 @@ impl Source for Clap {
         }
 
         Ok(matches)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{App, Arg};
+    use serde_derive::Deserialize;
+
+    #[derive(Debug, Deserialize, Default, Eq, PartialEq)]
+    #[serde(default)]
+    pub struct Config {
+        pub format: Option<String>,
+        pub verbosity: usize,
+        pub subcommand: Option<SubConfig>,
+        pub mode: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize, Default, Eq, PartialEq)]
+    #[serde(default)]
+    pub struct SubConfig {
+        pub ids: Vec<u32>,
+        pub flag: bool,
+    }
+
+    fn new_app() -> App<'static, 'static> {
+        App::new("app")
+            .arg(
+                Arg::with_name("format")
+                    .takes_value(true)
+                    .short("f")
+                    .long("format"),
+            )
+            .arg(
+                Arg::with_name("verbosity")
+                    .short("v")
+                    .long("verbose")
+                    .multiple(true),
+            )
+            .subcommand(
+                App::new("subcommand")
+                    .arg(Arg::with_name("flag").short("F").long("flag"))
+                    .arg(
+                        Arg::with_name("ids")
+                            .short("i")
+                            .long("id")
+                            .required(true)
+                            .takes_value(true)
+                            .multiple(true),
+                    ),
+            )
+    }
+
+    fn new_clap_config<I>(args: I) -> Clap
+    where
+        I: IntoIterator,
+        I::Item: Into<OsString> + Clone,
+    {
+        Clap::from_args(new_app(), args).subcommand_field("mode")
+    }
+
+    fn test_clap_with_args(args: Vec<&str>, expected: Config) {
+        let mut conf = config::Config::new();
+        let clap = new_clap_config(args);
+
+        log::debug!("CLAP: {:?}", clap);
+
+        conf.merge(clap).unwrap();
+        assert_eq!(conf.try_into::<Config>().unwrap(), expected);
+    }
+
+    #[test]
+    fn test_clap() {
+        env_logger::init();
+
+        test_clap_with_args(
+            vec![
+                "myprog",
+                "-vvv",
+                "--format=json",
+                "subcommand",
+                "-i1",
+                "-i2",
+                "-i3",
+            ],
+            Config {
+                format: Some("json".into()),
+                verbosity: 3,
+                subcommand: Some(SubConfig {
+                    ids: vec![1, 2, 3],
+                    flag: false,
+                }),
+                mode: Some("subcommand".into()),
+            },
+        );
     }
 }

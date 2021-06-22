@@ -31,6 +31,7 @@ pub struct Config {
     pub format: Option<String>,
     pub verbosity: usize,
     pub subcommand: Option<SubConfig>,
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -64,7 +65,7 @@ fn main() {
     let mut conf = Config::new();
     conf.merge(File::from("config.toml")).unwrap()
         .merge(Environment::with_prefix("APP_CONFIG")).unwrap()
-        .merge(Clap::new(app)).unwrap();
+        .merge(Clap::new(app).subcommand_field("mode")).unwrap();
     let options: Config = conf.try_into().unwrap();
     println!("Running with config: {:?}", options);
 }
