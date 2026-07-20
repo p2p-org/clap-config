@@ -14,7 +14,7 @@ license = "MIT"
 
 [dependencies]
 clap = "2"
-config = "0.11"
+config = "0.15"
 
 [dev-dependencies]
 serde = "1"
